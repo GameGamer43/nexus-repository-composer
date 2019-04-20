@@ -26,6 +26,9 @@
    * [Temporary Install](#temporary-install)
    * [(more) Permanent Install](#more-permanent-install)
    * [(most) Permament Install](#most-permanent-install)
+* [Running](#running)
+* [Notes](#notes)
+    * [Persistent Data](#persistent-data)
 * [The Fine Print](#the-fine-print)
 * [Getting Help](#getting-help)
 * [Composer Plugin](#composer-plugin)
@@ -55,11 +58,20 @@ as directly on [Travis CI](https://travis-ci.org/sonatype-nexus-community/nexus-
 
 #### Build with Docker
 
+To build a docker image from the Docker file you can use this command:
+
 `docker build -t nexus-repository-composer:0.0.2 .`
+
+The following optional variables can be used when building the image:
+
+- NEXUS_VERSION: Version of the Nexus Repository Manager
+- NEXUS_DOWNLOAD_URL: Download URL for Nexus Repository, alternative to using `NEXUS_VERSION` to download from Sonatype
+- NEXUS_DOWNLOAD_SHA256_HASH: Sha256 checksum for the downloaded Nexus Repository Manager archive. Required if `NEXUS_VERSION`
+ or `NEXUS_DOWNLOAD_URL` is provided
 
 #### Run as a Docker container
 
-`docker run -d -p 8081:8081 --name nexus nexus-repository-composer:0.0.2` 
+`docker run -d -p 8081:8081 --name nexus nexus-repository-composer:0.0.2`
 
 For further information like how to persist volumes check out [the GitHub repo for our official image](https://github.com/sonatype/docker-nexus3).
 
@@ -128,6 +140,84 @@ If you are trying to use the Composer plugin permanently, it likely makes more s
     </features>
    ```
 This will cause the plugin to be loaded and started with each startup of Nexus Repository.
+
+## Running
+
+To run, binding the exposed port 8081 to the host.
+
+```
+$ docker run -d -p 8081:8081 --name nexus sonatype/nexus3
+```
+
+To test:
+
+```
+$ curl -u admin:admin123 http://localhost:8081/service/metrics/ping
+```
+
+## Notes
+
+* Default credentials are: `admin` / `admin123`
+
+* It can take some time (2-3 minutes) for the service to launch in a
+new container.  You can tail the log to determine once Nexus is ready:
+
+```
+$ docker logs -f nexus
+```
+
+* Installation of Nexus is to `/opt/sonatype/nexus`.
+
+* A persistent directory, `/nexus-data`, is used for configuration,
+logs, and storage. This directory needs to be writable by the Nexus
+process, which runs as UID 200.
+
+* There is an environment variable that is being used to pass JVM arguments to the startup script
+
+  * `INSTALL4J_ADD_VM_PARAMS`, passed to the Install4J startup script. Defaults to `-Xms1200m -Xmx1200m -XX:MaxDirectMemorySize=2g -Djava.util.prefs.userRoot=${NEXUS_DATA}/javaprefs`.
+
+  This can be adjusted at runtime:
+
+  ```
+  $ docker run -d -p 8081:8081 --name nexus -e INSTALL4J_ADD_VM_PARAMS="-Xms2g -Xmx2g -XX:MaxDirectMemorySize=3g  -Djava.util.prefs.userRoot=/some-other-dir" sonatype/nexus3
+  ```
+
+  Of particular note, `-Djava.util.prefs.userRoot=/some-other-dir` can be set to a persistent path, which will maintain
+  the installed Nexus Repository License if the container is restarted.
+
+* Another environment variable can be used to control the Nexus Context Path
+
+  * `NEXUS_CONTEXT`, defaults to /
+
+  This can be supplied at runtime:
+
+  ```
+  $ docker run -d -p 8081:8081 --name nexus -e NEXUS_CONTEXT=nexus sonatype/nexus3
+  ```
+
+### Persistent Data
+
+There are two general approaches to handling persistent storage requirements
+with Docker. See [Managing Data in Containers](https://docs.docker.com/engine/tutorials/dockervolumes/)
+for additional information.
+
+  1. *Use a docker volume*.  Since docker volumes are persistent, a volume can be created specifically for
+  this purpose.  This is the recommended approach.
+
+  ```
+  $ docker volume create --name nexus-data
+  $ docker run -d -p 8081:8081 --name nexus -v nexus-data:/nexus-data sonatype/nexus3
+  ```
+
+  2. *Mount a host directory as the volume*.  This is not portable, as it
+  relies on the directory existing with correct permissions on the host.
+  However it can be useful in certain situations where this volume needs
+  to be assigned to certain specific underlying storage.
+
+  ```
+  $ mkdir /some/dir/nexus-data && chown -R 200 /some/dir/nexus-data
+  $ docker run -d -p 8081:8081 --name nexus -v /some/dir/nexus-data:/nexus-data sonatype/nexus3
+  ```
 
 ## The Fine Print
 
